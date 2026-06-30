@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ByteSona{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+    {% if not hide_header|default(false) %}
+        <header class="topbar">
+            <a class="brand" href="{{ url_for('home') }}" aria-label="ByteSona home">
+                <span class="brand-mark">BS</span>
+                <span>ByteSona</span>
+            </a>
+
+            <button class="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+
+            <nav class="nav-links" aria-label="Primary navigation">
+                <a class="{% if active_page == 'news' %}active{% endif %}" href="{{ url_for('home') }}">News</a>
+                <a class="{% if active_page == 'chatai' %}active{% endif %}" href="{{ url_for('chatai') }}">ChatAI</a>
+                <a class="{% if active_page == 'community' %}active{% endif %}" href="{{ url_for('community') }}">Community</a>
+                {% if current_user %}
+                    <a class="{% if active_page == 'profile' %}active{% endif %}" href="{{ url_for('profile') }}">Profile</a>
+                    <form class="nav-form" method="post" action="{{ url_for('logout') }}">
+                        <button type="submit">Logout</button>
+                    </form>
+                {% else %}
+                    <a class="{% if active_page == 'login' %}active{% endif %}" href="{{ url_for('login') }}">Login</a>
+                    <a class="{% if active_page == 'signup' %}active{% endif %}" href="{{ url_for('signup') }}">Sign up</a>
+                {% endif %}
+            </nav>
+        </header>
+    {% endif %}
+
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+
+    {% if not hide_script|default(false) %}
+        <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    {% endif %}
+</body>
+</html>

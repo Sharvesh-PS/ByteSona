@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% set active_page = "chatai" %}
+
+{% block title %}ChatAI - ByteSona{% endblock %}
+
+{% block content %}
+    <section class="chat-shell">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Assistant</p>
+                <h1>ChatAI</h1>
+            </div>
+        </div>
+
+        <div class="chat-layout">
+            <div class="chat-panel">
+                <div class="chat-stream" aria-live="polite" data-chat-stream>
+                    {% if user_message %}
+                        <div class="message user-message">
+                            <span>You</span>
+                            <p>{{ user_message }}</p>
+                        </div>
+                    {% endif %}
+
+                    {% if ai_reply is not none %}
+                        <div class="message ai-message">
+                            <span>ChatAI</span>
+                            <p>{{ ai_reply }}</p>
+                        </div>
+                    {% else %}
+                        <div class="empty-chat" data-empty-chat>
+                            <p>Ask a question to begin.</p>
+                        </div>
+                    {% endif %}
+                </div>
+
+                <form class="chat-form" method="post" action="{{ url_for('chatai') }}" data-chat-form data-chat-api="{{ url_for('chatai_api') }}">
+                    <label for="message">Your question</label>
+                    <textarea id="message" name="message" rows="4" placeholder="Type your question here..." required></textarea>
+                    <button type="submit">Send</button>
+                </form>
+            </div>
+
+            <aside class="community-panel">
+                <div class="section-title-row">
+                    <h2>Community News</h2>
+                    <a href="{{ url_for('community') }}">View all</a>
+                </div>
+
+                {% if current_user %}
+                    <form class="community-form" method="post" action="{{ url_for('create_post') }}">
+                        <label for="post-title">Post news</label>
+                        <input id="post-title" name="title" type="text" placeholder="Headline" required>
+                        <textarea name="description" rows="4" placeholder="What happened?" required></textarea>
+                        <input name="link" type="url" placeholder="Optional article link">
+                        <button type="submit">Post</button>
+                    </form>
+                {% else %}
+                    <div class="signin-note">
+                        <p>Login to post news, comment, and upvote community discussions.</p>
+                        <a href="{{ url_for('login') }}">Login</a>
+                    </div>
+                {% endif %}
+
+                <div class="mini-feed">
+                    {% for post in community_posts %}
+                        <article class="mini-post">
+                            <h3>{{ post.title }}</h3>
+                            <p>{{ post.description }}</p>
+                            <div class="post-meta">
+                                <span>{{ post.author.name }} &middot; {{ post.upvotes }} upvotes</span>
+                            </div>
+                        </article>
+                    {% else %}
+                        <p class="muted-text">No community posts yet.</p>
+                    {% endfor %}
+                </div>
+            </aside>
+        </div>
+    </section>
+{% endblock %}

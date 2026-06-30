@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% set active_page = "profile" %}
+
+{% block title %}Profile - ByteSona{% endblock %}
+
+{% block content %}
+    <section class="profile-shell">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Your Space</p>
+                <h1>Profile</h1>
+            </div>
+        </div>
+
+        <div class="profile-panel">
+            <h2>{{ user.name }}</h2>
+            <dl class="profile-details">
+                <div>
+                    <dt>Username</dt>
+                    <dd>@{{ user.username }}</dd>
+                </div>
+                <div>
+                    <dt>Role</dt>
+                    <dd>{{ user.role }}</dd>
+                </div>
+            </dl>
+        </div>
+
+        <section class="content-section" aria-labelledby="your-feed-heading">
+            <div class="section-title-row">
+                <h2 id="your-feed-heading">Your Feed</h2>
+            </div>
+
+            <div class="article-list">
+                {% for post in posts %}
+                    <article class="article-row">
+                        <div>
+                            <p class="story-label">Your Post</p>
+                            <h3>{{ post.title }}</h3>
+                            <p>{{ post.description }}</p>
+                        </div>
+                        <div class="row-action">
+                            <span>{{ post.upvotes }} upvotes</span>
+                            <span>{{ post.comments|length }} comments</span>
+                        </div>
+                    </article>
+                {% else %}
+                    <div class="profile-panel">
+                        <p>You have not posted any news yet.</p>
+                    </div>
+                {% endfor %}
+            </div>
+        </section>
+    </section>
+{% endblock %}

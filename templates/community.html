@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% set active_page = "community" %}
+
+{% block title %}Community - ByteSona{% endblock %}
+
+{% block content %}
+    <section class="community-shell">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Community Desk</p>
+                <h1>Discuss</h1>
+            </div>
+        </div>
+
+        {% if current_user %}
+            <form class="community-form community-form-wide" method="post" action="{{ url_for('create_post') }}">
+                <label for="title">Post news</label>
+                <input id="title" name="title" type="text" placeholder="Headline" required>
+                <textarea name="description" rows="4" placeholder="Share the update, context, or why it matters." required></textarea>
+                <input name="link" type="url" placeholder="Optional article link">
+                <button type="submit">Post news</button>
+            </form>
+        {% else %}
+            <div class="signin-note signin-note-wide">
+                <p>Login to post news, comment on discussions, and upvote stories.</p>
+                <a href="{{ url_for('login') }}">Login</a>
+            </div>
+        {% endif %}
+
+        <div class="discussion-feed">
+            {% for post in posts %}
+                <article class="discussion-post">
+                    <div class="post-head">
+                        <div>
+                            <p class="story-label">{{ post.author.role }}</p>
+                            <h2>{{ post.title }}</h2>
+                            <p class="post-author">Posted by {{ post.author.name }} @{{ post.author.username }}</p>
+                        </div>
+                        <form method="post" action="{{ url_for('upvote_post', post_id=post.id) }}">
+                            <button class="upvote-button" type="submit" {% if not current_user %}disabled{% endif %}>
+                                {{ post.upvotes }} Upvotes
+                            </button>
+                        </form>
+                    </div>
+
+                    <p>{{ post.description }}</p>
+                    {% if post.link %}
+                        <a class="post-link" href="{{ post.link }}" target="_blank" rel="noopener">Open source</a>
+                    {% endif %}
+
+                    <div class="comments">
+                        <h3>Comments</h3>
+                        {% for comment in post.comments %}
+                            <div class="comment">
+                                <strong>{{ comment.name }}</strong>
+                                <p>{{ comment.body }}</p>
+                            </div>
+                        {% else %}
+                            <p class="muted-text">No comments yet.</p>
+                        {% endfor %}
+                    </div>
+
+                    {% if current_user %}
+                        <form class="comment-form" method="post" action="{{ url_for('comment_post', post_id=post.id) }}">
+                            <input name="body" type="text" placeholder="Add a comment..." required>
+                            <button type="submit">Comment</button>
+                        </form>
+                    {% endif %}
+                </article>
+            {% else %}
+                <div class="profile-panel">
+                    <p>No user-posted news yet.</p>
+                </div>
+            {% endfor %}
+        </div>
+    </section>
+{% endblock %}

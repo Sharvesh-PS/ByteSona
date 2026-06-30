@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% set active_page = "signup" %}
+
+{% block title %}Sign up - ByteSona{% endblock %}
+
+{% block content %}
+    <section class="auth-shell">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Join the discussion</p>
+                <h1>Sign up</h1>
+            </div>
+        </div>
+
+        {% if error %}
+            <div class="alert">{{ error }}</div>
+        {% endif %}
+
+        <form class="auth-panel" method="post">
+            <label for="name">Name</label>
+            <input id="name" name="name" type="text" autocomplete="name" required>
+
+            <label for="username">Username</label>
+            <input id="username" name="username" type="text" autocomplete="username" required>
+
+            <label for="role">Role</label>
+            <input id="role" name="role" type="text" placeholder="Reader, reporter, student..." required>
+
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="new-password" required>
+
+            <button type="submit">Create account</button>
+            <p>Already have an account? <a href="{{ url_for('login') }}">Login</a></p>
+        </form>
+    </section>
+{% endblock %}
