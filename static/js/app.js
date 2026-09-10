@@ -17,42 +17,58 @@ if (menuButton && navLinks) {
 
 const chatForm = document.querySelector("[data-chat-form]");
 const chatStream = document.querySelector("[data-chat-stream]");
+const thinkingIndicator = document.querySelector("[data-thinking-indicator]");
 
-async function typeMessage(role, text) {
+function setThinking(isThinking) {
+    if (!thinkingIndicator) return;
+
+    if (isThinking) {
+        // Keep the status directly below the most recent user message, where the reply will appear.
+        chatStream.appendChild(thinkingIndicator);
+    }
+    thinkingIndicator.hidden = !isThinking;
+    chatStream.scrollTop = chatStream.scrollHeight;
+}
+
+function appendAiMessage(text) {
     const message = document.createElement("div");
-    message.className = `message ${role === "user" ? "user-message" : "ai-message"}`;
+    message.className = "message ai-message";
 
     const label = document.createElement("span");
-    label.textContent = role === "user" ? "You" : "ChatAI";
+    label.textContent = "ChatAI";
 
     const body = document.createElement("p");
+    body.innerHTML = formatMessage(text);
 
     message.append(label, body);
     chatStream.appendChild(message);
-
-    let current = "";
-
-    // Type raw text
-    for (let i = 0; i < text.length; i++) {
-        current += text[i];
-        body.textContent = current;
-
-        chatStream.scrollTop = chatStream.scrollHeight;
-
-        await new Promise(resolve => setTimeout(resolve, 10));
-    }
-
-    // Convert formatting after typing finishes
-    body.innerHTML = formatMessage(text);
+    chatStream.scrollTop = chatStream.scrollHeight;
 }
 function formatMessage(text) {
-    return text
+    const escaped = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+
+    return escaped
+        // Only ByteSona article anchors are allowed as clickable chat links.
+        .replace(/\[([^\]]+)\]\(\/news#article-(\d+)\)/g, '<a href="/news#article-$2">$1</a>')
         .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
         .replace(/\*(.*?)\*/g, "<em>$1</em>")
         .replace(/^### (.*)$/gm, "<h3>$1</h3>")
         .replace(/^## (.*)$/gm, "<h2>$1</h2>")
         .replace(/^# (.*)$/gm, "<h1>$1</h1>")
         .replace(/\n/g, "<br>");
+}
+
+document.querySelectorAll("[data-ai-content]").forEach((message) => {
+    message.innerHTML = formatMessage(message.textContent);
+});
+
+if (chatStream) {
+    chatStream.scrollTop = chatStream.scrollHeight;
 }
 
 function appendMessage(role, text) {
@@ -86,10 +102,12 @@ async function sendChatMessage(form) {
     }
 
     appendMessage("user", text);
+    document.querySelector("[data-quick-questions]")?.remove();
     textarea.value = "";
     textarea.focus();
 
     submitButton.disabled = true;
+    setThinking(true);
 
     try {
         const response = await fetch(form.dataset.chatApi, {
@@ -101,13 +119,13 @@ async function sendChatMessage(form) {
         });
 
         const data = await response.json();
-        await typeMessage(
-    "ai",
-    response.ok ? data.reply : data.error || "Something went wrong."
-);
+        setThinking(false);
+        appendAiMessage(response.ok ? data.reply : data.error || "Something went wrong.");
     } catch (error) {
-        await typeMessage("ai", "Unable to reach ChatAI right now.");
+        setThinking(false);
+        appendAiMessage("Unable to reach ChatAI right now.");
     } finally {
+        setThinking(false);
         submitButton.disabled = false;
     }
 }
@@ -127,3 +145,12 @@ if (chatForm && chatStream) {
         }
     });
 }
+
+document.querySelectorAll("[data-quick-question]").forEach((button) => {
+    button.addEventListener("click", () => {
+        if (!chatForm) return;
+        const textarea = chatForm.querySelector("textarea[name='message']");
+        textarea.value = button.dataset.quickQuestion;
+        sendChatMessage(chatForm);
+    });
+});

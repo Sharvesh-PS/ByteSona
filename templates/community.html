@@ -14,16 +14,23 @@
 
         {% if current_user %}
             <form class="community-form community-form-wide" method="post" action="{{ url_for('create_post') }}">
-                <label for="title">Post news</label>
-                <input id="title" name="title" type="text" placeholder="Headline" required>
-                <textarea name="description" rows="4" placeholder="Share the update, context, or why it matters." required></textarea>
-                <input name="link" type="url" placeholder="Optional article link">
-                <button type="submit">Post news</button>
+                {% if tagged_article %}
+                    <div class="tagged-story">
+                        <span>Tagged from ByteSona Tech News</span>
+                        <strong>{{ tagged_article.title }}</strong>
+                        <p>Add your perspective before reposting it to the community.</p>
+                    </div>
+                {% endif %}
+                <label for="title">{% if tagged_article %}Repost to community{% else %}Post news{% endif %}</label>
+                <input id="title" name="title" type="text" placeholder="Headline" value="{{ tagged_article.title if tagged_article else '' }}" required>
+                <textarea name="description" rows="4" placeholder="{% if tagged_article %}Add your comment or perspective...{% else %}Share the update, context, or why it matters.{% endif %}" required></textarea>
+                <input name="link" type="url" placeholder="Optional article link" value="{{ tagged_article.link if tagged_article else '' }}">
+                <button type="submit">{% if tagged_article %}Repost with my perspective{% else %}Post news{% endif %}</button>
             </form>
         {% else %}
             <div class="signin-note signin-note-wide">
-                <p>Login to post news, comment on discussions, and upvote stories.</p>
-                <a href="{{ url_for('login') }}">Login</a>
+                <p>{% if tagged_article %}Login to add your perspective and repost this tagged story.{% else %}Login to post news, comment on discussions, and upvote stories.{% endif %}</p>
+                <a href="{{ url_for('login', next=request.full_path) }}">Login</a>
             </div>
         {% endif %}
 

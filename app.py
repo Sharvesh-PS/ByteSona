@@ -3,14 +3,17 @@ from functools import wraps
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
-from chatai import airesponse
 from database import (
     add_post_comment,
     add_post_upvote,
+    add_live_news_comment,
     authenticate_user,
     create_user,
     create_user_post,
+    chat_with_news_assistant,
+    get_chat_history,
     get_articles,
+    get_article,
     get_user_by_id,
     get_user_posts,
     refresh_and_get_articles,
@@ -33,10 +36,10 @@ def login_required(view):
     @wraps(view)
     def wrapped_view(*args, **kwargs):
         if not session.get("user_id"):
-            return redirect(url_for("login", next=request.path))
+            return redirect(url_for("login", next=request.full_path))
         if not current_user():
             session.clear()
-            return redirect(url_for("login", next=request.path))
+            return redirect(url_for("login", next=request.full_path))
         return view(*args, **kwargs)
 
     return wrapped_view
@@ -50,10 +53,9 @@ def home():
 @app.route("/news")
 def news_page():
     error = None
-    articles = []
-
     try:
         articles = refresh_and_get_articles(limit=24)
+        
     except Exception as exc:
         error = f"Unable to refresh live news right now: {exc}"
         try:
@@ -66,6 +68,10 @@ def news_page():
     latest = articles[1:7] if len(articles) > 1 else []
     more_news = articles[7:] if len(articles) > 7 else []
 
+    
+    print(error)
+    print("artic",articles)
+    print(featured,latest,more_news)
     return render_template(
         "index.html",
         error=error,
@@ -75,24 +81,42 @@ def news_page():
         total_articles=len(articles),
     )
 
+
+@app.route("/news/<int:article_id>/comment", methods=["POST"])
+@login_required
+def comment_live_news(article_id):
+    body = request.form.get("body", "").strip()[:1000]
+    if body:
+        add_live_news_comment(article_id, session["user_id"], body)
+    return redirect(request.referrer or url_for("news_page"))
+
 @app.route("/chatai", methods=["GET", "POST"])
+@login_required
 def chatai():
-    user_message = ""
-    ai_reply = None
+    user = current_user()
     community_posts = get_user_posts(limit=4)
+    starter_prompt = request.args.get("prompt", "").strip()[:3000]
+    if starter_prompt:
+        chat_with_news_assistant(user, starter_prompt)
+        session["chat_first_question_asked"] = True
+        return redirect(url_for("chatai"))
     if request.method == "POST":
         user_message = request.form.get("message", "").strip()
         if user_message:
-            ai_reply = airesponse(user_message)
+            chat_with_news_assistant(user, user_message)
+            session["chat_first_question_asked"] = True
+        return redirect(url_for("chatai"))
     return render_template(
         "chatai.html",
-        user_message=user_message,
-        ai_reply=ai_reply,
+        chat_history=get_chat_history(user["id"]),
+        show_quick_questions=not session.get("chat_first_question_asked", False),
         community_posts=community_posts,
+        starter_prompt="",
     )
 
 
 @app.route("/api/chatai", methods=["POST"])
+@login_required
 def chatai_api():
     data = request.get_json(silent=True) or {}
     user_message = str(data.get("message", "")).strip()
@@ -100,7 +124,9 @@ def chatai_api():
     if not user_message:
         return jsonify({"error": "Message is required"}), 400
     
-    return jsonify({"reply": airesponse(user_message)})
+    reply = chat_with_news_assistant(current_user(), user_message)
+    session["chat_first_question_asked"] = True
+    return jsonify({"reply": reply})
 
 
 @app.route("/profile")
@@ -125,9 +151,10 @@ def signup():
             error = "All fields are required."
         else:
             user = create_user(username, name, role, password)
-            if user:
-                session["user_id"] = user["id"]
-                return redirect(url_for("profile"))
+        if user:
+            session["user_id"] = user["id"]
+            session["chat_first_question_asked"] = False
+            return redirect(url_for("profile"))
             error = "That username is already taken."
 
     return render_template("signup.html", error=error)
@@ -144,6 +171,7 @@ def login():
 
         if user:
             session["user_id"] = user["id"]
+            session["chat_first_question_asked"] = False
             return redirect(request.args.get("next") or url_for("profile"))
 
         error = "Invalid username or password."
@@ -159,7 +187,15 @@ def logout():
 
 @app.route("/community")
 def community():
-    return render_template("community.html", posts=get_user_posts(limit=40))
+    tagged_article = None
+    article_id = request.args.get("article", type=int)
+    if article_id:
+        tagged_article = get_article(article_id)
+    return render_template(
+        "community.html",
+        posts=get_user_posts(limit=40),
+        tagged_article=tagged_article,
+    )
 
 
 @app.route("/community/post", methods=["POST"])
@@ -172,7 +208,8 @@ def create_post():
     if title and description:
         create_user_post(session["user_id"], title, description, link)
 
-    return redirect(request.referrer or url_for("community"))
+    # A tagged repost should return to a clean composer after it is published.
+    return redirect(url_for("community"))
 
 
 @app.route("/community/<int:post_id>/comment", methods=["POST"])

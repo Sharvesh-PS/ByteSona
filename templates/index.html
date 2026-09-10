@@ -1,6 +1,36 @@
 {% extends "base.html" %}
 {% set active_page = "news" %}
 
+{% macro article_discussion(article) %}
+    <div class="article-discussion">
+        <div class="article-action-bar" aria-label="Story actions">
+            <details class="article-comment-control">
+                <summary class="comment-toggle">Comment{% if article.comments %} ({{ article.comments|length }}){% endif %}</summary>
+                <div class="article-comments">
+                    {% for comment in article.comments %}
+                        <div class="comment">
+                            <strong>{{ comment.name }} <span>@{{ comment.username }}</span></strong>
+                            <p>{{ comment.body }}</p>
+                        </div>
+                    {% else %}
+                        <p class="muted-text">Be the first to discuss this story.</p>
+                    {% endfor %}
+                </div>
+                {% if current_user %}
+                    <form class="comment-form" method="post" action="{{ url_for('comment_live_news', article_id=article.id) }}">
+                        <input name="body" type="text" maxlength="1000" placeholder="Share your perspective..." required>
+                        <button type="submit">Comment</button>
+                    </form>
+                {% else %}
+                    <a class="comment-login" href="{{ url_for('login', next=request.path) }}">Login to comment</a>
+                {% endif %}
+            </details>
+            <a class="story-action" href="{{ url_for('community', article=article.id) }}">Tag</a>
+            <a class="story-action story-action-ai" href="{{ url_for('chatai', prompt='Discuss this technology news with me. Explain the story clearly and help me evaluate it: ' ~ article.title ~ ' — ' ~ article.description) }}">Ask AI</a>
+        </div>
+    </div>
+{% endmacro %}
+
 {% block title %}ByteSona{% endblock %}
 
 {% block content %}
@@ -18,15 +48,21 @@
         {% endif %}
 
         {% if featured %}
-            <article class="featured-story">
+            <article id="article-{{ featured.id }}" class="featured-story">
                 <div class="feature-content">
-                    <p class="story-label">Top Story</p>
+                    <div class="article-labels">
+                        <p class="story-label">Top Story</p>
+                        <span class="importance-badge importance-{{ featured.importance }}" tabindex="0" data-reason="{{ featured.analysis_reason }}" aria-label="Why this story is {{ featured.importance }}: {{ featured.analysis_reason }}">{{ featured.importance }}</span>
+                        <span class="sentiment-badge">{{ featured.sentiment }}</span>
+                    </div>
                     <h2>{{ featured.title }}</h2>
                     <p>{{ featured.description }}</p>
+                    <p class="analysis-reason">Why it matters: {{ featured.analysis_reason }}</p>
                     <div class="story-meta">
                         <span>{{ featured.published_at }}</span>
                         <a href="{{ featured.link }}" target="_blank" rel="noopener">Read article</a>
                     </div>
+                    {{ article_discussion(featured) }}
                 </div>
             </article>
         {% endif %}
@@ -39,14 +75,20 @@
 
                 <div class="news-grid">
                     {% for article in latest %}
-                        <article class="news-card">
-                            <p class="story-label">Tech News</p>
+                        <article id="article-{{ article.id }}" class="news-card">
+                            <div class="article-labels">
+                                <p class="story-label">Tech News</p>
+                                <span class="importance-badge importance-{{ article.importance }}" tabindex="0" data-reason="{{ article.analysis_reason }}" aria-label="Why this story is {{ article.importance }}: {{ article.analysis_reason }}">{{ article.importance }}</span>
+                                
+                            </div>
                             <h3>{{ article.title }}</h3>
                             <p>{{ article.description }}</p>
+                            <p class="analysis-reason">{{ article.analysis_reason }}</p>
                             <div class="story-meta">
                                 <span>{{ article.published_at }}</span>
                                 <a href="{{ article.link }}" target="_blank" rel="noopener">Open</a>
                             </div>
+                            {{ article_discussion(article) }}
                         </article>
                     {% endfor %}
                 </div>
@@ -61,11 +103,17 @@
 
                 <div class="article-list">
                     {% for article in more_news %}
-                        <article class="article-row">
+                        <article id="article-{{ article.id }}" class="article-row">
                             <div>
-                                <p class="story-label">Article</p>
+                                <div class="article-labels">
+                                    <p class="story-label">Article</p>
+                                    <span class="importance-badge importance-{{ article.importance }}" tabindex="0" data-reason="{{ article.analysis_reason }}" aria-label="Why this story is {{ article.importance }}: {{ article.analysis_reason }}">{{ article.importance }}</span>
+                                    
+                                </div>
                                 <h3>{{ article.title }}</h3>
                                 <p>{{ article.description }}</p>
+                                <p class="analysis-reason">{{ article.analysis_reason }}</p>
+                                {{ article_discussion(article) }}
                             </div>
                             <div class="row-action">
                                 <span>{{ article.published_at }}</span>

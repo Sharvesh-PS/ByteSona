@@ -14,29 +14,35 @@
 
         <div class="chat-layout">
             <div class="chat-panel">
+                {% if show_quick_questions %}
+                    <div class="quick-questions" data-quick-questions>
+                        <p>Start with a quick question</p>
+                        <button type="button" data-quick-question="What is the live news today?">What is the live news today?</button>
+                        <button type="button" data-quick-question="What is the hot topic today?">What is the hot topic today?</button>
+                    </div>
+                {% endif %}
                 <div class="chat-stream" aria-live="polite" data-chat-stream>
-                    {% if user_message %}
-                        <div class="message user-message">
-                            <span>You</span>
-                            <p>{{ user_message }}</p>
-                        </div>
-                    {% endif %}
-
-                    {% if ai_reply is not none %}
-                        <div class="message ai-message">
-                            <span>ChatAI</span>
-                            <p>{{ ai_reply }}</p>
-                        </div>
+                    {% if chat_history %}
+                        {% for message in chat_history %}
+                            <div class="message {% if message.role == 'user' %}user-message{% else %}ai-message{% endif %}">
+                                <span>{% if message.role == 'user' %}You{% else %}ChatAI{% endif %}</span>
+                                <p{% if message.role == 'assistant' %} data-ai-content{% endif %}>{{ message.content }}</p>
+                            </div>
+                        {% endfor %}
                     {% else %}
                         <div class="empty-chat" data-empty-chat>
-                            <p>Ask a question to begin.</p>
+                            <p>Ask about today&apos;s headlines, a story in the feed, or what&apos;s happening now.</p>
                         </div>
                     {% endif %}
+                    <div class="thinking-indicator" data-thinking-indicator role="status" aria-live="polite" hidden>
+                        <span class="thinking-spinner" aria-hidden="true"></span>
+                        <span>ChatAI is thinking...</span>
+                    </div>
                 </div>
 
                 <form class="chat-form" method="post" action="{{ url_for('chatai') }}" data-chat-form data-chat-api="{{ url_for('chatai_api') }}">
                     <label for="message">Your question</label>
-                    <textarea id="message" name="message" rows="4" placeholder="Type your question here..." required></textarea>
+                    <textarea id="message" name="message" rows="4" maxlength="3000" placeholder="Ask about today’s headlines or a news story..." required>{{ starter_prompt }}</textarea>
                     <button type="submit">Send</button>
                 </form>
             </div>

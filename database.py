@@ -5,26 +5,17 @@ import psycopg2
 import psycopg2.extras
 import requests
 from news import fetch_news
+from chatai import analyze_news, news_assistant_response, vector as openrouter_vector
 from werkzeug.security import check_password_hash, generate_password_hash
 
-HFAPI = os.getenv("HFAPI")
-API_URL = "https://router.huggingface.co/hf-inference/models/BAAI/bge-base-en-v1.5"
+# Previous Hugging Face embedding configuration (kept for reference):
+# HFAPI = os.getenv("HFAPI")
+# API_URL = "https://router.huggingface.co/hf-inference/models/BAAI/bge-base-en-v1.5"
+
 
 def vector(prompt):
-    if not HFAPI:
-        return None
-
-    headers = {
-    "Authorization": f"Bearer {HFAPI}"
-    }
-
-    data = {
-        "inputs":prompt
-    }
-
-    response = requests.post(API_URL, headers=headers, json=data, timeout=20)
-    response.raise_for_status()
-    return(response.json())
+    """Use the shared OpenRouter embedding implementation for news retrieval."""
+    return openrouter_vector(prompt)
 
 DB_CONFIG = {
     "dbname": "postgres",
@@ -41,7 +32,7 @@ SIMILARITY_THRESHOLD = 0.5
 conn = psycopg2.connect(**DB_CONFIG)
 cursor = conn.cursor()
 
-
+print(cursor)
 def _parse_published_at(value):
     if not value:
         return None
@@ -70,10 +61,17 @@ def initialize_database():
             published_at TEXT,
             published_at_ts TIMESTAMPTZ,
             content_vector JSONB,
+            sentiment TEXT,
+            importance TEXT,
+            analysis_reason TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """
     )
+    # Safe migrations for databases created by earlier versions of the app.
+    cursor.execute("ALTER TABLE live_news ADD COLUMN IF NOT EXISTS sentiment TEXT")
+    cursor.execute("ALTER TABLE live_news ADD COLUMN IF NOT EXISTS importance TEXT")
+    cursor.execute("ALTER TABLE live_news ADD COLUMN IF NOT EXISTS analysis_reason TEXT")
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -86,6 +84,29 @@ def initialize_database():
         )
         """
     )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS live_news_comments (
+            id SERIAL PRIMARY KEY,
+            article_id INTEGER NOT NULL REFERENCES live_news(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            body TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+            content TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    cursor.execute("CREATE INDEX IF NOT EXISTS chat_messages_user_created_idx ON chat_messages (user_id, created_at DESC)")
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS user_news_posts (
@@ -153,6 +174,7 @@ def store_articles(articles):
         row["content_vector"] = _build_content_vector(
             f"{row['title']}\n\n{row['description']}".strip()
         )
+        analysis = analyze_news(row["title"], row["description"])
 
         cursor.execute(
             """
@@ -162,9 +184,12 @@ def store_articles(articles):
                 description,
                 published_at,
                 published_at_ts,
-                content_vector
+                content_vector,
+                sentiment,
+                importance,
+                analysis_reason
             )
-            VALUES (%s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (link) DO NOTHING
             """,
             (
@@ -174,6 +199,9 @@ def store_articles(articles):
                 row["published_at"],
                 row["published_at_ts"],
                 psycopg2.extras.Json(row["content_vector"]),
+                analysis["sentiment"],
+                analysis["importance"],
+                analysis["reason"],
             ),
         )
         inserted_count += cursor.rowcount
@@ -186,7 +214,7 @@ def get_articles(limit=24):
     initialize_database()
     cursor.execute(
         """
-        SELECT title, link, description, published_at
+        SELECT id, title, link, description, published_at, sentiment, importance, analysis_reason
         FROM live_news
         ORDER BY
             published_at_ts DESC NULLS LAST,
@@ -196,22 +224,184 @@ def get_articles(limit=24):
         """,
         (limit,),
     )
-
-    return [
-        {
+    articles = []
+    for article_id, title, link, description, published_at, sentiment, importance, reason in cursor.fetchall():
+        # Backfill saved articles lazily, so every article displayed receives AI analysis.
+        if (
+            not sentiment
+            or not importance
+            or reason in {"Analysis is temporarily unavailable.", "AI classification unavailable."}
+        ):
+            analysis = analyze_news(title, description or "")
+            sentiment, importance, reason = analysis["sentiment"], analysis["importance"], analysis["reason"]
+            cursor.execute(
+                "UPDATE live_news SET sentiment = %s, importance = %s, analysis_reason = %s WHERE id = %s",
+                (sentiment, importance, reason, article_id),
+            )
+        articles.append({
+            "id": article_id,
             "title": title,
             "link": link,
             "description": description,
             "published_at": published_at,
-        }
-        for title, link, description, published_at in cursor.fetchall()
-    ]
+            "sentiment": sentiment or "neutral",
+            "importance": importance or "mid",
+            "analysis_reason": reason or "Analysis is temporarily unavailable.",
+            "comments": [],
+        })
+
+    if articles:
+        article_ids = [article["id"] for article in articles]
+        cursor.execute(
+            """
+            SELECT c.article_id, c.body, c.created_at, u.name, u.username
+            FROM live_news_comments c
+            JOIN users u ON u.id = c.user_id
+            WHERE c.article_id = ANY(%s)
+            ORDER BY c.created_at ASC, c.id ASC
+            """,
+            (article_ids,),
+        )
+        comments_by_article = {article_id: [] for article_id in article_ids}
+        for article_id, body, created_at, name, username in cursor.fetchall():
+            comments_by_article[article_id].append({"body": body, "created_at": created_at, "name": name, "username": username})
+        for article in articles:
+            article["comments"] = comments_by_article[article["id"]]
+
+    conn.commit()
+    return articles
+
+
+def get_article(article_id):
+    """Return one saved live-news item for sharing or an AI discussion prompt."""
+    initialize_database()
+    cursor.execute(
+        """
+        SELECT id, title, link, description, published_at, sentiment, importance, analysis_reason
+        FROM live_news
+        WHERE id = %s
+        """,
+        (article_id,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        return None
+
+    article_id, title, link, description, published_at, sentiment, importance, reason = row
+    return {
+        "id": article_id,
+        "title": title,
+        "link": link,
+        "description": description or "",
+        "published_at": published_at,
+        "sentiment": sentiment or "neutral",
+        "importance": importance or "mid",
+        "analysis_reason": reason or "",
+    }
 
 
 def refresh_and_get_articles(limit=24):
     live_articles = fetch_news(limit=limit)
     store_articles(live_articles)
     return get_articles(limit=limit)
+
+
+def add_live_news_comment(article_id, user_id, body):
+    initialize_database()
+    cursor.execute(
+        """
+        INSERT INTO live_news_comments (article_id, user_id, body)
+        SELECT id, %s, %s FROM live_news WHERE id = %s
+        """,
+        (user_id, body.strip(), article_id),
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def get_chat_history(user_id, limit=30):
+    initialize_database()
+    cursor.execute(
+        """
+        SELECT role, content, created_at
+        FROM chat_messages
+        WHERE user_id = %s
+        ORDER BY created_at DESC, id DESC
+        LIMIT %s
+        """,
+        (user_id, limit),
+    )
+    return [
+        {"role": role, "content": content, "created_at": created_at}
+        for role, content, created_at in reversed(cursor.fetchall())
+    ]
+
+
+def _flat_vector(value):
+    """Normalize provider embedding shapes to a list of numeric values."""
+    while isinstance(value, list) and len(value) == 1 and isinstance(value[0], list):
+        value = value[0]
+    if not isinstance(value, list) or not value or not all(isinstance(item, (int, float)) for item in value):
+        return None
+    return value
+
+
+def _cosine_similarity(left, right):
+    if not left or not right or len(left) != len(right):
+        return 0
+    numerator = sum(a * b for a, b in zip(left, right))
+    left_size = sum(a * a for a in left) ** 0.5
+    right_size = sum(b * b for b in right) ** 0.5
+    return numerator / (left_size * right_size) if left_size and right_size else 0
+
+
+def get_news_context(query, limit=6):
+    """Retrieve topical live news; important recent stories remain available as fallback."""
+    initialize_database()
+    cursor.execute(
+        """
+        SELECT id, title, description, importance, content_vector
+        FROM live_news
+        ORDER BY published_at_ts DESC NULLS LAST, created_at DESC, id DESC
+        LIMIT 40
+        """
+    )
+    candidates = cursor.fetchall()
+    try:
+        query_vector = _flat_vector(_build_content_vector(query))
+    except Exception:
+        query_vector = None
+
+    ranked = []
+    for article_id, title, description, importance, content_vector in candidates:
+        score = _cosine_similarity(query_vector, _flat_vector(content_vector)) if query_vector else 0
+        importance_bonus = {"hot": 0.16, "mid": 0.08, "chill": 0}.get(importance, 0)
+        ranked.append((score + importance_bonus, article_id, title, description, importance or "mid"))
+    ranked.sort(reverse=True)
+    return [
+        {"id": article_id, "title": title, "description": description or "", "importance": importance}
+        for _, article_id, title, description, importance in ranked[:limit]
+    ]
+
+
+def chat_with_news_assistant(user, message):
+    """Persist a user-specific exchange after retrieving current live-news context."""
+    message = message.strip()[:3000]
+    history = get_chat_history(user["id"], limit=24)
+    articles = get_news_context(message)
+    reply = news_assistant_response(user["name"], message, history, articles)
+    top_events_terms = ("top event", "top headline", "headlines today", "today's headline", "today news", "what is happening", "what's happening", "current summary")
+    if any(term in message.lower() for term in top_events_terms) and "/news#article-" not in reply:
+        links = "\n".join(f"- [{article['title']}](/news#article-{article['id']})" for article in articles)
+        if links:
+            reply = f"{reply.rstrip()}\n\n**Open the stories:**\n{links}"
+    initialize_database()
+    cursor.executemany(
+        "INSERT INTO chat_messages (user_id, role, content) VALUES (%s, %s, %s)",
+        [(user["id"], "user", message), (user["id"], "assistant", reply)],
+    )
+    conn.commit()
+    return reply
 
 
 def create_user(username, name, role, password):
