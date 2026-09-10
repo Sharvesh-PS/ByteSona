@@ -7,7 +7,6 @@ ByteSona is an AI-powered news aggregation and sentiment analysis system that co
 The main idea behind the project is to go beyond simply collecting and displaying news. ByteSona processes the articles to understand their content and sentiment, stores them in a searchable knowledge base, and allows users to interact with the news using natural language.
 
 The chatbot uses Retrieval-Augmented Generation (RAG) to retrieve relevant news articles from the stored knowledge base before generating a response. This allows the chatbot to answer questions based on the news that has actually been collected by the system.
-
 ---
 
 ## Key Features
